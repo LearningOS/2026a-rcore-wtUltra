@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter3/5exercise.rst.
 //! Task management implementation
 //!
 //! Everything about task management, like starting and switching tasks is
@@ -17,6 +19,7 @@ mod task;
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use alloc::collections::BTreeMap;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -45,6 +48,7 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+    syscall_counts: BTreeMap<(usize, usize), usize>,
 }
 
 lazy_static! {
@@ -65,6 +69,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_counts: BTreeMap::new(),
                 })
             },
         }
@@ -168,4 +173,20 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Record the call before dispatch, without holding the manager across a switch.
+pub fn record_syscall(id: usize) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    *inner.syscall_counts.entry((current, id)).or_insert(0) += 1;
+}
+
+/// Return the number of calls by this task (including the current trace).
+pub fn syscall_count(id: usize) -> usize {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    *inner
+        .syscall_counts
+        .get(&(inner.current_task, id))
+        .unwrap_or(&0)
 }
