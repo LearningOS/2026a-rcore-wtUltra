@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter4/7exercise.rst.
 //! Task management implementation
 //!
 //! Everything about task management, like starting and switching tasks is
@@ -17,6 +19,7 @@ mod task;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -46,6 +49,7 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    syscall_counts: BTreeMap<(usize, usize), usize>,
 }
 
 lazy_static! {
@@ -64,6 +68,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_counts: BTreeMap::new(),
                 })
             },
         }
@@ -201,4 +206,33 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Record the call before dispatch, without holding the manager across a switch.
+pub fn record_syscall(id: usize) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    *inner.syscall_counts.entry((current, id)).or_insert(0) += 1;
+}
+
+/// Return the number of calls by this task (including the current trace).
+pub fn syscall_count(id: usize) -> usize {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    *inner
+        .syscall_counts
+        .get(&(inner.current_task, id))
+        .unwrap_or(&0)
+}
+
+/// Map pages into the current task address space.
+pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current].memory_set.mmap(start, len, prot)
+}
+/// Unmap pages from the current task address space.
+pub fn munmap(start: usize, len: usize) -> isize {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current].memory_set.munmap(start, len)
 }
