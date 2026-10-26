@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter8/5exercise.rst.
 //! Memory management implementation
 //!
 //! SV39 page-based virtual-memory architecture for RV64 systems, and
@@ -29,3 +31,5 @@ pub fn init() {
     frame_allocator::init_frame_allocator();
     KERNEL_SPACE.exclusive_access().activate();
 }
+
+pub use page_table::{checked_user_buffer, copy_to_user};

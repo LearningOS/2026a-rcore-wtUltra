@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter8/5exercise.rst.
 //! Implementation of  [`ProcessControlBlock`]
 
 use super::id::RecycleAllocator;
@@ -27,6 +29,8 @@ pub struct ProcessControlBlock {
 pub struct ProcessControlBlockInner {
     /// is zombie?
     pub is_zombie: bool,
+    /// Per-process resource-request bookkeeping.
+    pub deadlock: crate::sync::DeadlockDetector,
     /// memory set(address space)
     pub memory_set: MemorySet,
     /// parent process
@@ -101,6 +105,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
+                    deadlock: crate::sync::DeadlockDetector::default(),
                     memory_set,
                     parent: None,
                     children: Vec::new(),
@@ -234,6 +239,7 @@ impl ProcessControlBlock {
             inner: unsafe {
                 UPSafeCell::new(ProcessControlBlockInner {
                     is_zombie: false,
+                    deadlock: crate::sync::DeadlockDetector::default(),
                     memory_set,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),

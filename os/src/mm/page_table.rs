@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter8/5exercise.rst.
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::string::String;
@@ -272,5 +274,54 @@ impl Iterator for UserBufferIterator {
             }
             Some(r)
         }
+    }
+}
+
+/// Validate every user page before returning any slices (including cross-page objects).
+pub fn checked_user_buffer(
+    token: usize,
+    start: usize,
+    len: usize,
+    write: bool,
+) -> Option<Vec<&'static mut [u8]>> {
+    let end = start.checked_add(len)?;
+    // User mappings occupy the lower canonical half of Sv39. Do not silently
+    // truncate noncanonical pointers into aliases of a valid user page.
+    if start >= (1usize << 38) || end > (1usize << 38) {
+        return None;
+    }
+    let table = PageTable::from_token(token);
+    let mut buffers = Vec::new();
+    let mut address = start;
+    while address < end {
+        let va = VirtAddr::from(address);
+        let pte = table.translate(va.floor())?;
+        if !pte.is_valid()
+            || !pte.flags().contains(PTEFlags::U)
+            || (write && !pte.writable())
+            || (!write && !pte.readable())
+        {
+            return None;
+        }
+        let offset = va.page_offset();
+        let count = core::cmp::min(crate::config::PAGE_SIZE - offset, end - address);
+        buffers.push(&mut pte.ppn().get_bytes_array()[offset..offset + count]);
+        address += count;
+    }
+    Some(buffers)
+}
+
+/// Copy bytes to user memory after validating every destination page.
+pub fn copy_to_user(token: usize, start: usize, data: &[u8]) -> bool {
+    if let Some(buffers) = checked_user_buffer(token, start, data.len(), true) {
+        let mut copied = 0;
+        for buffer in buffers {
+            let count = buffer.len();
+            buffer.copy_from_slice(&data[copied..copied + count]);
+            copied += count;
+        }
+        true
+    } else {
+        false
     }
 }
