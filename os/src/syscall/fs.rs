@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 //! File and filesystem-related syscalls
 use crate::fs::{open_file, OpenFlags, Stat};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
@@ -75,29 +77,49 @@ pub fn sys_close(fd: usize) -> isize {
     0
 }
 
-/// YOUR JOB: Implement fstat.
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+/// File metadata is copied through checked user buffers, not a kernel pointer cast.
+pub fn sys_fstat(fd: usize, st: *mut Stat) -> isize {
+    let task = current_task().unwrap();
+    let file = match task
+        .inner_exclusive_access()
+        .fd_table
+        .get(fd)
+        .and_then(|f| f.clone())
+    {
+        Some(file) => file,
+        None => return -1,
+    };
+    if let Some(stat) = file.stat() {
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                &stat as *const Stat as *const u8,
+                core::mem::size_of::<Stat>(),
+            )
+        };
+        if crate::mm::copy_to_user(current_user_token(), st as usize, bytes) {
+            0
+        } else {
+            -1
+        }
+    } else {
+        -1
+    }
 }
-
-/// YOUR JOB: Implement linkat.
-pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_linkat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
+    let token = current_user_token();
+    let old = translated_str(token, old_name);
+    let new = translated_str(token, new_name);
+    if crate::fs::link_file(&old, &new) {
+        0
+    } else {
+        -1
+    }
 }
-
-/// YOUR JOB: Implement unlinkat.
-pub fn sys_unlinkat(_name: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_unlinkat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_unlinkat(name: *const u8) -> isize {
+    let name = translated_str(current_user_token(), name);
+    if crate::fs::unlink_file(&name) {
+        0
+    } else {
+        -1
+    }
 }

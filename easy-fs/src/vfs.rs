@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 use super::{
     block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
     EasyFileSystem, DIRENT_SZ,
@@ -15,6 +17,124 @@ pub struct Inode {
 }
 
 impl Inode {
+    fn valid_name(name: &str) -> bool {
+        !name.is_empty()
+            && name.len() <= 27
+            && !name.as_bytes().contains(&0)
+            && !name.contains('/')
+            && name != "."
+            && name != ".."
+    }
+    fn free_dirent(directory: &DiskInode, device: &Arc<dyn BlockDevice>) -> usize {
+        let count = directory.size as usize / DIRENT_SZ;
+        let mut entry = DirEntry::empty();
+        for index in 0..count {
+            directory.read_at(index * DIRENT_SZ, entry.as_bytes_mut(), device);
+            if entry.name().is_empty() {
+                return index;
+            }
+        }
+        count
+    }
+    /// Return the stable on-disk inode number.
+    pub fn inode_id(&self) -> u32 {
+        self.fs
+            .lock()
+            .get_disk_inode_id(self.block_id, self.block_offset)
+    }
+    /// Count real names, not open descriptors, referring to this inode.
+    pub fn link_count(&self) -> u32 {
+        let fs = self.fs.lock();
+        let id = fs.get_disk_inode_id(self.block_id, self.block_offset);
+        let (block, offset) = fs.get_disk_inode_pos(0);
+        get_block_cache(block as usize, self.block_device.clone())
+            .lock()
+            .read(offset, |root: &DiskInode| {
+                let mut count = 0;
+                let mut entry = DirEntry::empty();
+                for i in 0..root.size as usize / DIRENT_SZ {
+                    root.read_at(i * DIRENT_SZ, entry.as_bytes_mut(), &self.block_device);
+                    if !entry.name().is_empty() && entry.inode_id() == id {
+                        count += 1;
+                    }
+                }
+                count
+            })
+    }
+    /// Add another name for exactly the same disk inode.
+    pub fn link(&self, old: &str, new: &str) -> bool {
+        if old == new || !Self::valid_name(old) || !Self::valid_name(new) {
+            return false;
+        }
+        let mut fs = self.fs.lock();
+        let old_id = self.read_disk_inode(|root| self.find_inode_id(old, root));
+        let id = match old_id {
+            Some(id) => id,
+            None => return false,
+        };
+        if self
+            .read_disk_inode(|root| self.find_inode_id(new, root))
+            .is_some()
+        {
+            return false;
+        }
+        self.modify_disk_inode(|root| {
+            let slot = Self::free_dirent(root, &self.block_device);
+            self.increase_size(((slot + 1) * DIRENT_SZ) as u32, root, &mut fs);
+            root.write_at(
+                slot * DIRENT_SZ,
+                DirEntry::new(new, id).as_bytes(),
+                &self.block_device,
+            );
+        });
+        block_cache_sync_all();
+        true
+    }
+    /// Remove only the directory entry. The OS defers reclaim until the final
+    /// open file description is gone, allowing reads after the last unlink.
+    pub fn unlink(&self, name: &str) -> Option<Arc<Inode>> {
+        if !Self::valid_name(name) {
+            return None;
+        }
+        let fs = self.fs.lock();
+        let removed = self.modify_disk_inode(|root| {
+            let mut entry = DirEntry::empty();
+            for i in 0..root.size as usize / DIRENT_SZ {
+                root.read_at(i * DIRENT_SZ, entry.as_bytes_mut(), &self.block_device);
+                if entry.name() == name {
+                    let id = entry.inode_id();
+                    root.write_at(
+                        i * DIRENT_SZ,
+                        DirEntry::empty().as_bytes(),
+                        &self.block_device,
+                    );
+                    return Some(id);
+                }
+            }
+            None
+        });
+        let inode = removed.map(|id| {
+            let (block, offset) = fs.get_disk_inode_pos(id);
+            Arc::new(Self::new(
+                block,
+                offset,
+                self.fs.clone(),
+                self.block_device.clone(),
+            ))
+        });
+        block_cache_sync_all();
+        inode
+    }
+    /// Caller must ensure no directory entry or open file still references it.
+    pub fn reclaim(&self) {
+        self.clear();
+        let mut fs = self.fs.lock();
+        let id = fs.get_disk_inode_id(self.block_id, self.block_offset);
+        assert_ne!(id, 0);
+        fs.dealloc_inode(id);
+        block_cache_sync_all();
+    }
+
     /// Create a vfs inode
     pub fn new(
         block_id: u32,
@@ -45,6 +165,9 @@ impl Inode {
     fn find_inode_id(&self, name: &str, disk_inode: &DiskInode) -> Option<u32> {
         // assert it is a directory
         assert!(disk_inode.is_dir());
+        if name.is_empty() {
+            return None;
+        }
         let file_count = (disk_inode.size as usize) / DIRENT_SZ;
         let mut dirent = DirEntry::empty();
         for i in 0..file_count {
@@ -92,6 +215,9 @@ impl Inode {
     }
     /// Create inode under current inode by name
     pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
+        if !Self::valid_name(name) {
+            return None;
+        }
         let mut fs = self.fs.lock();
         let op = |root_inode: &DiskInode| {
             // assert it is a directory
@@ -114,7 +240,7 @@ impl Inode {
             });
         self.modify_disk_inode(|root_inode| {
             // append file in the dirent
-            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let file_count = Self::free_dirent(root_inode, &self.block_device);
             let new_size = (file_count + 1) * DIRENT_SZ;
             // increase size
             self.increase_size(new_size as u32, root_inode, &mut fs);
@@ -150,7 +276,9 @@ impl Inode {
                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
                     DIRENT_SZ,
                 );
-                v.push(String::from(dirent.name()));
+                if !dirent.name().is_empty() {
+                    v.push(String::from(dirent.name()));
+                }
             }
             v
         })

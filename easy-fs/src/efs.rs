@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 use super::{
     block_cache_sync_all, get_block_cache, Bitmap, BlockDevice, DiskInode, DiskInodeType, Inode,
     SuperBlock,
@@ -126,6 +128,15 @@ impl EasyFileSystem {
         self.data_area_start_block + data_block_id
     }
     /// Allocate a new inode
+    pub fn get_disk_inode_id(&self, block: usize, offset: usize) -> u32 {
+        (((block - self.inode_area_start_block as usize) * crate::BLOCK_SZ + offset)
+            / core::mem::size_of::<DiskInode>()) as u32
+    }
+    /// Return an unreferenced inode to the allocation bitmap.
+    pub fn dealloc_inode(&mut self, id: u32) {
+        self.inode_bitmap.dealloc(&self.block_device, id as usize);
+    }
+    /// Allocate an inode id from the inode bitmap.
     pub fn alloc_inode(&mut self) -> u32 {
         self.inode_bitmap.alloc(&self.block_device).unwrap() as u32
     }

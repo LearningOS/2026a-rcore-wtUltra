@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 //! File trait & inode(dir, file, pipe, stdin, stdout)
 
 mod inode;
@@ -11,6 +13,10 @@ pub trait File: Send + Sync {
     fn readable(&self) -> bool;
     /// the file writable?
     fn writable(&self) -> bool;
+    /// Return inode metadata, or None for devices and pipes.
+    fn stat(&self) -> Option<Stat> {
+        None
+    }
     /// read from the file to buf, return the number of bytes read
     fn read(&self, buf: UserBuffer) -> usize;
     /// write to the file from buf, return the number of bytes written
@@ -30,7 +36,8 @@ pub struct Stat {
     /// number of hard links
     pub nlink: u32,
     /// unused pad
-    pad: [u64; 7],
+    /// Reserved ABI padding, always initialized to zero.
+    pub pad: [u64; 7],
 }
 
 bitflags! {
@@ -46,5 +53,5 @@ bitflags! {
     }
 }
 
-pub use inode::{list_apps, open_file, OSInode, OpenFlags};
+pub use inode::{link_file, list_apps, open_file, unlink_file, OSInode, OpenFlags};
 pub use stdio::{Stdin, Stdout};

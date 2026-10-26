@@ -1,13 +1,16 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 //! `Arc<Inode>` -> `OSInodeInner`: In order to open files concurrently
 //! we need to wrap `Inode` into `Arc`,but `Mutex` in `Inode` prevents
 //! file systems from being accessed simultaneously
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -31,6 +34,10 @@ pub struct OSInodeInner {
 impl OSInode {
     /// create a new inode in memory
     pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
+        *OPEN_FILES
+            .exclusive_access()
+            .entry(inode.inode_id())
+            .or_insert(0) += 1;
         Self {
             readable,
             writable,
@@ -56,6 +63,8 @@ impl OSInode {
 }
 
 lazy_static! {
+    static ref OPEN_FILES: UPSafeCell<BTreeMap<u32, usize>> =
+        unsafe { UPSafeCell::new(BTreeMap::new()) };
     pub static ref ROOT_INODE: Arc<Inode> = {
         let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
         Arc::new(EasyFileSystem::root_inode(&efs))
@@ -126,6 +135,16 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
 }
 
 impl File for OSInode {
+    fn stat(&self) -> Option<Stat> {
+        let inner = self.inner.exclusive_access();
+        Some(Stat {
+            dev: 0,
+            ino: inner.inode.inode_id() as u64,
+            mode: StatMode::FILE,
+            nlink: inner.inode.link_count(),
+            pad: [0; 7],
+        })
+    }
     fn readable(&self) -> bool {
         self.readable
     }
@@ -155,5 +174,41 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+}
+
+/// Add a hard link in the root directory.
+pub fn link_file(old: &str, new: &str) -> bool {
+    ROOT_INODE.link(old, new)
+}
+/// Remove a name and reclaim only after the last open reference closes.
+pub fn unlink_file(name: &str) -> bool {
+    if let Some(inode) = ROOT_INODE.unlink(name) {
+        let open = OPEN_FILES
+            .exclusive_access()
+            .contains_key(&inode.inode_id());
+        if !open && inode.link_count() == 0 {
+            inode.reclaim();
+        }
+        true
+    } else {
+        false
+    }
+}
+impl Drop for OSInode {
+    fn drop(&mut self) {
+        let inode = self.inner.exclusive_access().inode.clone();
+        let id = inode.inode_id();
+        let mut files = OPEN_FILES.exclusive_access();
+        let count = files.get_mut(&id).unwrap();
+        *count -= 1;
+        let last = *count == 0;
+        if last {
+            files.remove(&id);
+        }
+        drop(files);
+        if last && inode.link_count() == 0 {
+            inode.reclaim();
+        }
     }
 }
