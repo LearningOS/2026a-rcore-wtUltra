@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter5/4exercise.rst.
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
@@ -68,6 +70,10 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+    /// Scheduling weight and accumulated virtual runtime.
+    pub priority: usize,
+    /// Accumulated virtual runtime for stride scheduling.
+    pub stride: u128,
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +124,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    priority: 16,
+                    stride: 0,
                 })
             },
         };
@@ -191,6 +199,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    priority: parent_inner.priority,
+                    stride: parent_inner.stride,
                 })
             },
         });

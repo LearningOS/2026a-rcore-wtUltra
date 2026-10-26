@@ -1,3 +1,5 @@
+// Implementation assistance: Codex AI; disclosed in reports.
+// Specification: LearningOS/rCore-Tutorial-Guide source/chapter5/4exercise.rst.
 //! Implementation of [`MapArea`] and [`MemorySet`].
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
@@ -37,6 +39,123 @@ pub struct MemorySet {
 }
 
 impl MemorySet {
+    /// Map a nonoverlapping anonymous range. Keep ownership in MapArea so frames
+    /// are reclaimed on munmap or process destruction, and fork copies them.
+    pub fn mmap(&mut self, start: usize, len: usize, prot: usize) -> isize {
+        if start % PAGE_SIZE != 0 || prot == 0 || prot & !7 != 0 {
+            return -1;
+        }
+        let end = match len
+            .checked_add(PAGE_SIZE - 1)
+            .map(|n| n / PAGE_SIZE * PAGE_SIZE)
+            .and_then(|n| start.checked_add(n))
+        {
+            Some(end) if start < (1usize << 38) && end <= (1usize << 38) => end,
+            _ => return -1,
+        };
+        let range = VPNRange::new(VirtAddr::from(start).floor(), VirtAddr::from(end).floor());
+        for vpn in range {
+            if self
+                .page_table
+                .translate(vpn)
+                .map_or(false, |pte| pte.is_valid())
+            {
+                return -1;
+            }
+        }
+        if start == end {
+            return 0;
+        }
+        let permission = MapPermission::from_bits((prot as u8) << 1).unwrap() | MapPermission::U;
+        let mut area = MapArea::new(start.into(), end.into(), MapType::Framed, permission);
+        for vpn in range {
+            if let Some(frame) = frame_alloc() {
+                self.page_table.map(
+                    vpn,
+                    frame.ppn,
+                    PTEFlags::from_bits(permission.bits()).unwrap(),
+                );
+                area.data_frames.insert(vpn, frame);
+            } else {
+                // Roll back pages already installed if data-frame allocation fails.
+                for mapped in area.data_frames.keys() {
+                    self.page_table.unmap(*mapped);
+                }
+                return -1;
+            }
+        }
+        self.areas.push(area);
+        0
+    }
+
+    /// Validate the entire range first, then split areas at either boundary.
+    /// This supports partial unmaps as well as a range spanning several mmaps.
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        if start % PAGE_SIZE != 0 {
+            return -1;
+        }
+        let end = match len
+            .checked_add(PAGE_SIZE - 1)
+            .map(|n| n / PAGE_SIZE * PAGE_SIZE)
+            .and_then(|n| start.checked_add(n))
+        {
+            Some(end) if start < (1usize << 38) && end <= (1usize << 38) => end,
+            _ => return -1,
+        };
+        let first = VirtAddr::from(start).floor();
+        let last = VirtAddr::from(end).floor();
+        for vpn in VPNRange::new(first, last) {
+            if !self.areas.iter().any(|a| {
+                a.map_type == MapType::Framed
+                    && a.map_perm.contains(MapPermission::U)
+                    && a.vpn_range.get_start() <= vpn
+                    && vpn < a.vpn_range.get_end()
+            }) {
+                return -1;
+            }
+            if !self
+                .page_table
+                .translate(vpn)
+                .map_or(false, |p| p.is_valid())
+            {
+                return -1;
+            }
+        }
+        if first == last {
+            return 0;
+        }
+        let areas = core::mem::take(&mut self.areas);
+        for mut area in areas {
+            let a = area.vpn_range.get_start();
+            let b = area.vpn_range.get_end();
+            let low = core::cmp::max(a, first);
+            let high = core::cmp::min(b, last);
+            if low >= high {
+                self.areas.push(area);
+                continue;
+            }
+            for vpn in VPNRange::new(low, high) {
+                area.unmap_one(&mut self.page_table, vpn);
+            }
+            let right_frames = area.data_frames.split_off(&high);
+            let map_type = area.map_type;
+            let map_perm = area.map_perm;
+            if a < low {
+                area.vpn_range = VPNRange::new(a, low);
+                self.areas.push(area);
+            }
+            if high < b {
+                self.areas.push(MapArea {
+                    vpn_range: VPNRange::new(high, b),
+                    data_frames: right_frames,
+                    map_type,
+                    map_perm,
+                });
+            }
+        }
+        0
+    }
+
     /// Create a new empty `MemorySet`.
     pub fn new_bare() -> Self {
         Self {
