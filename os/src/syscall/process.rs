@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter8/5exercise.rst.
 use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_ref, translated_refmut, translated_str},

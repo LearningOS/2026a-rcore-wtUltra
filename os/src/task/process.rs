@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter8/5exercise.rst.
 //! Implementation of  [`ProcessControlBlock`]
 
 use super::id::RecycleAllocator;
