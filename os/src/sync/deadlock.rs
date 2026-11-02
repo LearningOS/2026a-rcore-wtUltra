@@ -1,6 +1,3 @@
-//! Per-process resource-request safety checks.
-//! Mutexes and semaphores are
-//! separate resource classes, as specified by the exercise.
 use alloc::{vec, vec::Vec};
 
 #[derive(Default)]
