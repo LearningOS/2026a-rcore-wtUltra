@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 //! `Arc<Inode>` -> `OSInodeInner`: In order to open files concurrently
 //! we need to wrap `Inode` into `Arc`,but `Mutex` in `Inode` prevents
 //! file systems from being accessed simultaneously

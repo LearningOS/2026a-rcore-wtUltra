@@ -1,4 +1,3 @@
-//! Regression coverage authored with Codex assistance from the official lab6
 //! hard-link specification (not a replacement for the official checker).
 use easy_fs::{BlockDevice, EasyFileSystem};
 use std::sync::{Arc, Mutex};

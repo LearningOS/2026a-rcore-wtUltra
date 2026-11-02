@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 //! File trait & inode(dir, file, pipe, stdin, stdout)
 
 mod inode;

@@ -1,4 +1,3 @@
-//! Additional user-mode regression, with Codex assistance, based on the
 //! official chapter6 hard-link specification and open-file lifetime semantics.
 #![no_std]
 #![no_main]

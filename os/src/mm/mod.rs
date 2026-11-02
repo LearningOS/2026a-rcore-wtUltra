@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter6/4exercise.rst.
 //! Memory management implementation
 //!
 //! SV39 page-based virtual-memory architecture for RV64 systems, and
