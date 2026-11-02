@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter3/5exercise.rst.
 //! Implementation of syscalls
 //!
 //! The single entry point to all system calls, [`syscall()`], is called
