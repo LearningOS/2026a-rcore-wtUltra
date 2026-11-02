@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter4/7exercise.rst.
 //! Task management implementation
 //!
 //! Everything about task management, like starting and switching tasks is

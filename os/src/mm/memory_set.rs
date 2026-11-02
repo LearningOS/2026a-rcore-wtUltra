@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter4/7exercise.rst.
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
 use super::{frame_alloc, FrameTracker};

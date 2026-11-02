@@ -1,4 +1,3 @@
-//! Additional user-mode regression, with Codex assistance, based on the
 //! official chapter4 mmap/munmap/trace/gettimeofday specification.
 #![no_std]
 #![no_main]

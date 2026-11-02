@@ -1,5 +1,3 @@
-// Implementation assistance: Codex AI; disclosed in reports.
-// Specification: LearningOS/rCore-Tutorial-Guide source/chapter4/7exercise.rst.
 //! Process management syscalls
 use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
 
