@@ -1,4 +1,3 @@
-//! hard-link specification (not a replacement for the official checker).
 use easy_fs::{BlockDevice, EasyFileSystem};
 use std::sync::{Arc, Mutex};
 
@@ -39,8 +38,6 @@ fn hard_link_identity_unlink_and_reuse() {
     assert_eq!(alias.link_count(), 1);
     root.unlink("alias").unwrap();
     assert_eq!(alias.link_count(), 0);
-    // VFS unlink does not prematurely free an open file; the OS decides when
-    // its final open description disappears, then invokes reclaim.
     assert_eq!(alias.read_at(0, &mut bytes), 12);
     assert!(root.find("").is_none());
     assert!(root.ls().is_empty());
@@ -48,8 +45,6 @@ fn hard_link_identity_unlink_and_reuse() {
     drop(file);
     alias.reclaim();
     drop(alias);
-    // Both the directory slot and inode id must remain reusable well beyond
-    // the initial number of slots; large data writes exercise indirect blocks.
     for _ in 0..100 {
         let file = root.create("reused").unwrap();
         assert_eq!(file.inode_id(), id);

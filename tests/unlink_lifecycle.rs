@@ -1,4 +1,3 @@
-//! official chapter6 hard-link specification and open-file lifetime semantics.
 #![no_std]
 #![no_main]
 extern crate user_lib;
