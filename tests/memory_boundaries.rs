@@ -1,4 +1,3 @@
-//! official chapter4 mmap/munmap/trace/gettimeofday specification.
 #![no_std]
 #![no_main]
 extern crate user_lib;
@@ -12,7 +11,6 @@ pub fn main() -> i32 {
     for page in 0..4 {
         unsafe { core::ptr::write_volatile((BASE + PAGE * page) as *mut u8, page as u8 + 11) };
     }
-    // An aligned timeval whose fields lie in different physical pages.
     let time = BASE + PAGE - 8;
     assert_eq!(syscall(SYSCALL_GETTIMEOFDAY, [time, 0, 0]), 0);
     assert!(unsafe { core::ptr::read_volatile((time + 8) as *const usize) } < 1_000_000);
@@ -26,7 +24,6 @@ pub fn main() -> i32 {
         unsafe { core::ptr::read_volatile(time as *const usize) },
         0xdead_beef
     );
-    // Rejecting a partly unmapped range must leave all existing pages intact.
     assert_eq!(munmap(BASE, PAGE * 2), -1);
     assert_eq!(trace_read(BASE as *const u8), Some(11));
     assert_eq!(mmap(BASE + PAGE, PAGE * 2, 3), 0);
